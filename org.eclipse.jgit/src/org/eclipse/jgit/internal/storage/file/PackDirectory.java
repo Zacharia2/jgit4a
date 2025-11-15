@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -111,9 +112,7 @@ class PackDirectory {
 	void close() {
 		PackList packs = packList.get();
 		if (packs != NO_PACKS && packList.compareAndSet(packs, NO_PACKS)) {
-			for (Pack p : packs.packs) {
-				p.close();
-			}
+			Pack.close(Set.of(packs.packs));
 		}
 	}
 
@@ -460,12 +459,9 @@ class PackDirectory {
 					&& !oldPack.getFileSnapshot().isModified(packFile)) {
 				forReuse.remove(packFile.getName());
 				list.add(oldPack);
-				try {
-					if(oldPack.getBitmapIndex() == null) {
-						oldPack.refreshBitmapIndex(packFilesByExt.get(BITMAP_INDEX));
-					}
-				} catch (IOException e) {
-					LOG.warn(JGitText.get().bitmapAccessErrorForPackfile, oldPack.getPackName(), e);
+				PackFile bitMaps = packFilesByExt.get(BITMAP_INDEX);
+				if (bitMaps != null) {
+					oldPack.setBitmapIndexFile(bitMaps);
 				}
 				continue;
 			}
@@ -484,9 +480,7 @@ class PackDirectory {
 			return old;
 		}
 
-		for (Pack p : forReuse.values()) {
-			p.close();
-		}
+		Pack.close(new HashSet<>(forReuse.values()));
 
 		if (list.isEmpty()) {
 			return new PackList(snapshot, NO_PACKS.packs);
@@ -545,7 +539,7 @@ class PackDirectory {
 		for (String name : nameList) {
 			try {
 				PackFile pack = new PackFile(directory, name);
-				if (pack.getPackExt() != null) {
+				if (pack.getPackExt() != null && !pack.isTmpGCFile()) {
 					Map<PackExt, PackFile> packByExt = packFilesByExtById
 							.get(pack.getId());
 					if (packByExt == null) {
